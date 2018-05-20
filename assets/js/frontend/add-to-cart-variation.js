@@ -1,4 +1,4 @@
-/*global wc_add_to_cart_variation_params, wc_cart_fragments_params */
+/*global wc_add_to_cart_variation_params */
 ;(function ( $, window, document, undefined ) {
 	/**
 	 * VariationForm class which handles variation forms and attributes.
@@ -6,13 +6,14 @@
 	var VariationForm = function( $form ) {
 		this.$form                = $form;
 		this.$attributeFields     = $form.find( '.variations select' );
-		this.$singleVariation     = $form.find( '.single_variation' ),
+		this.$singleVariation     = $form.find( '.single_variation' );
 		this.$singleVariationWrap = $form.find( '.single_variation_wrap' );
 		this.$resetVariations     = $form.find( '.reset_variations' );
 		this.$product             = $form.closest( '.product' );
 		this.variationData        = $form.data( 'product_variations' );
 		this.useAjax              = false === this.variationData;
 		this.xhr                  = false;
+		this.loading              = true;
 
 		// Initial state.
 		this.$singleVariationWrap.show();
@@ -37,9 +38,12 @@
 		$form.on( 'check_variations.wc-variation-form', { variationForm: this }, this.onFindVariation );
 		$form.on( 'update_variation_values.wc-variation-form', { variationForm: this }, this.onUpdateAttributes );
 
-		// Check variations once init.
-		$form.trigger( 'check_variations' );
-		$form.trigger( 'wc_variation_form' );
+		// Init after gallery.
+		setTimeout( function() {
+			$form.trigger( 'check_variations' );
+			$form.trigger( 'wc_variation_form' );
+			$form.loading = false;
+		}, 100 );
 	};
 
 	/**
@@ -135,7 +139,7 @@
 				currentAttributes.product_id  = parseInt( form.$form.data( 'product_id' ), 10 );
 				currentAttributes.custom_data = form.$form.data( 'custom_data' );
 				form.xhr                      = $.ajax( {
-					url: wc_cart_fragments_params.wc_ajax_url.toString().replace( '%%endpoint%%', 'get_variation' ),
+					url: wc_add_to_cart_variation_params.wc_ajax_url.toString().replace( '%%endpoint%%', 'get_variation' ),
 					type: 'POST',
 					data: currentAttributes,
 					success: function( variation ) {
@@ -143,8 +147,12 @@
 							form.$form.trigger( 'found_variation', [ variation ] );
 						} else {
 							form.$form.trigger( 'reset_data' );
-							form.$form.find( '.single_variation' ).after( '<p class="wc-no-matching-variations woocommerce-info">' + wc_add_to_cart_variation_params.i18n_no_matching_variations_text + '</p>' );
-							form.$form.find( '.wc-no-matching-variations' ).slideDown( 200 );
+							attributes.chosenCount = 0;
+
+							if ( ! form.loading ) {
+								form.$form.find( '.single_variation' ).after( '<p class="wc-no-matching-variations woocommerce-info">' + wc_add_to_cart_variation_params.i18n_no_matching_variations_text + '</p>' );
+								form.$form.find( '.wc-no-matching-variations' ).slideDown( 200 );
+							}
 						}
 					},
 					complete: function() {
@@ -161,8 +169,12 @@
 					form.$form.trigger( 'found_variation', [ variation ] );
 				} else {
 					form.$form.trigger( 'reset_data' );
-					form.$form.find( '.single_variation' ).after( '<p class="wc-no-matching-variations woocommerce-info">' + wc_add_to_cart_variation_params.i18n_no_matching_variations_text + '</p>' );
-					form.$form.find( '.wc-no-matching-variations' ).slideDown( 200 );
+					attributes.chosenCount = 0;
+
+					if ( ! form.loading ) {
+						form.$form.find( '.single_variation' ).after( '<p class="wc-no-matching-variations woocommerce-info">' + wc_add_to_cart_variation_params.i18n_no_matching_variations_text + '</p>' );
+						form.$form.find( '.wc-no-matching-variations' ).slideDown( 200 );
+					}
 				}
 			}
 		} else {
@@ -546,15 +558,17 @@
 		var $form             = this,
 			$product          = $form.closest( '.product' ),
 			$product_gallery  = $product.find( '.images' ),
-			$gallery_img      = $product.find( '.flex-control-nav li:eq(0) img' ),
+			$gallery_nav      = $product.find( '.flex-control-nav' ),
+			$gallery_img      = $gallery_nav.find( 'li:eq(0) img' ),
 			$product_img_wrap = $product_gallery.find( '.woocommerce-product-gallery__image, .woocommerce-product-gallery__image--placeholder' ).eq( 0 ),
 			$product_img      = $product_img_wrap.find( '.wp-post-image' ),
 			$product_link     = $product_img_wrap.find( 'a' ).eq( 0 );
 
 		if ( variation && variation.image && variation.image.src && variation.image.src.length > 1 ) {
-			if ( $( '.flex-control-nav li img[src="' + variation.image.thumb_src + '"]' ).length > 0 ) {
-				$gallery_img = $( '.flex-control-nav li img[src="' + variation.image.thumb_src + '"]' );
-				$gallery_img.trigger( 'click' );
+			$form.wc_variations_image_reset();
+
+			if ( $gallery_nav.find( 'li img[src="' + variation.image.gallery_thumbnail_src + '"]' ).length > 0 ) {
+				$gallery_nav.find( 'li img[src="' + variation.image.gallery_thumbnail_src + '"]' ).trigger( 'click' );
 				$form.attr( 'current-image', variation.image_id );
 				return;
 			} else {
@@ -570,24 +584,11 @@
 				$product_img.wc_set_variation_attr( 'data-large_image_width', variation.image.full_src_w );
 				$product_img.wc_set_variation_attr( 'data-large_image_height', variation.image.full_src_h );
 				$product_img_wrap.wc_set_variation_attr( 'data-thumb', variation.image.src );
-				$gallery_img.wc_set_variation_attr( 'src', variation.image.thumb_src );
+				$gallery_img.wc_set_variation_attr( 'src', variation.image.gallery_thumbnail_src );
 				$product_link.wc_set_variation_attr( 'href', variation.image.full_src );
 			}
 		} else {
-			$product_img.wc_reset_variation_attr( 'src' );
-			$product_img.wc_reset_variation_attr( 'width' );
-			$product_img.wc_reset_variation_attr( 'height' );
-			$product_img.wc_reset_variation_attr( 'srcset' );
-			$product_img.wc_reset_variation_attr( 'sizes' );
-			$product_img.wc_reset_variation_attr( 'title' );
-			$product_img.wc_reset_variation_attr( 'alt' );
-			$product_img.wc_reset_variation_attr( 'data-src' );
-			$product_img.wc_reset_variation_attr( 'data-large_image' );
-			$product_img.wc_reset_variation_attr( 'data-large_image_width' );
-			$product_img.wc_reset_variation_attr( 'data-large_image_height' );
-			$product_img_wrap.wc_reset_variation_attr( 'data-thumb' );
-			$gallery_img.wc_reset_variation_attr( 'src' );
-			$product_link.wc_reset_variation_attr( 'href' );
+			$form.wc_variations_image_reset();
 		}
 
 		window.setTimeout( function() {
@@ -595,6 +596,35 @@
 			$form.wc_maybe_trigger_slide_position_reset( variation );
 			$product_gallery.trigger( 'woocommerce_gallery_init_zoom' );
 		}, 20 );
+	};
+
+	/**
+	 * Reset main image to defaults.
+	 */
+	$.fn.wc_variations_image_reset = function() {
+		var $form             = this,
+			$product          = $form.closest( '.product' ),
+			$product_gallery  = $product.find( '.images' ),
+			$gallery_nav      = $product.find( '.flex-control-nav' ),
+			$gallery_img      = $gallery_nav.find( 'li:eq(0) img' ),
+			$product_img_wrap = $product_gallery.find( '.woocommerce-product-gallery__image, .woocommerce-product-gallery__image--placeholder' ).eq( 0 ),
+			$product_img      = $product_img_wrap.find( '.wp-post-image' ),
+			$product_link     = $product_img_wrap.find( 'a' ).eq( 0 );
+
+		$product_img.wc_reset_variation_attr( 'src' );
+		$product_img.wc_reset_variation_attr( 'width' );
+		$product_img.wc_reset_variation_attr( 'height' );
+		$product_img.wc_reset_variation_attr( 'srcset' );
+		$product_img.wc_reset_variation_attr( 'sizes' );
+		$product_img.wc_reset_variation_attr( 'title' );
+		$product_img.wc_reset_variation_attr( 'alt' );
+		$product_img.wc_reset_variation_attr( 'data-src' );
+		$product_img.wc_reset_variation_attr( 'data-large_image' );
+		$product_img.wc_reset_variation_attr( 'data-large_image_width' );
+		$product_img.wc_reset_variation_attr( 'data-large_image_height' );
+		$product_img_wrap.wc_reset_variation_attr( 'data-thumb' );
+		$gallery_img.wc_reset_variation_attr( 'src' );
+		$product_link.wc_reset_variation_attr( 'href' );
 	};
 
 	$(function() {
